@@ -1,17 +1,23 @@
 # Installed
-import requests
+from concurrent.futures import ThreadPoolExecutor, as_completed
 import json
+from queue import Queue
+from threading import Thread
+import time
+from typing import Any, Dict, Tuple
+
+import requests
 from urllib3.exceptions import InsecureRequestWarning
-from typing import Tuple, Dict, Any
+
+from ._cspm_session import CSPMSession
+from ._session_base import Session
+
 
 requests.packages.urllib3.disable_warnings(category=InsecureRequestWarning)
 
 # Local
-from ._session_base import Session
-from ._cspm_session import CSPMSession
 
-# Python Library
-import time
+WORKER_THREADS = 6
 
 
 # ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
@@ -65,6 +71,8 @@ class SaaSCWPSession(Session):
         self.auth_style = "Bearer "
 
         self.token = ""
+        self.request_queue = Queue()
+        self.output_queue = Queue()
 
         self.headers = {
             "content-type": "application/json; charset=UTF-8",
@@ -107,7 +115,7 @@ class SaaSCWPSession(Session):
 
         # Build request
         url = f"{self.api_url}/api/v1/authenticate"
-        self.logger.debug("api url %s", self.api_url)
+        self.logger.debug(f"api url {self.api_url}")
         headers = {"content-type": "application/json; charset=UTF-8"}
 
         payload = {
@@ -117,7 +125,7 @@ class SaaSCWPSession(Session):
         }
 
         self.logger.debug(
-            "API - Generating SaaS CWPP session token. payload value %s", payload
+            f"API - Generating SaaS CWPP session token. payload value {payload}"
         )
 
         res = object()
@@ -156,27 +164,124 @@ class SaaSCWPSession(Session):
         )
         return self._api_login()
 
-    def _container_network_info(self) -> requests.Response:
+    def _get__container_network_info(self, offset, limit) -> Tuple[int, str]:
         url = f"{self.api_url}/api/v1/containers"
-        self.logger.debug("api url %s", self.api_url)
+        self.logger.debug(f"api url {url}")
 
         headers = {
             "accept": "application/json",
             "Authorization": f"Bearer {self.token}",
         }
 
-        response = requests.get(url, headers=headers, timeout=60, verify=False)
+        params = {"offset": offset, "limit": limit}
 
-        return response
+        response = requests.get(
+            url, headers=headers, params=params, timeout=60, verify=False
+        )
+
+        return response.status_code, response.text
+
+    def _container_producer(self):
+        offset = 0
+        limit = 100
+        request_count = 0
+        start_time = time.time()
+        RATE_LIMIT = 30
+        RATE_LIMIT_PERIOD = 30  # seconds
+        while True:
+            # Implement rate limiting
+            if request_count >= RATE_LIMIT:
+                elapsed_time = time.time() - start_time
+                if elapsed_time < RATE_LIMIT_PERIOD:
+                    sleep_time = RATE_LIMIT_PERIOD - elapsed_time
+                    self.logger.info(
+                        f"Rate limit reached. Sleeping for {sleep_time} seconds..."
+                    )
+                    time.sleep(sleep_time)
+                request_count = 0
+                start_time = time.time()
+
+            status_code, response_text = self._get__container_network_info(
+                offset, limit
+            )
+            request_count += 1
+
+            if status_code != 200:
+                self.logger.error(f"Error fetching containers: {status_code}")
+                break
+
+            containers = json.loads(response_text)
+            if not containers:
+                break  # No more data to fetch
+
+            for container in containers:
+                self.request_queue.put(container)
+
+            if len(containers) < limit:
+                break  # Last page has fewer items, we're done
+
+            offset += limit
+
+        # Indicate that no more data will be sent
+        for _ in range(WORKER_THREADS):
+            self.request_queue.put(None)
+
+    def _container_consumer(self):
+        while True:
+            container = self.request_queue.get()
+            if container is None:
+                break
+
+            container_info = self._extract_network_info(container)
+            if container_info:
+                self.output_queue.put(container_info)
+
+            self.request_queue.task_done()
+
+        # Indicate that no more data will be processed
+        self.output_queue.put(None)
 
     def get_open_container_ports(self) -> object:
-        res = self._container_network_info()
-        self.logger.debug(res.status_code)
-        containers_array = json.loads(res.text)
-        self.logger.debug(len(containers_array))
-        for container in containers_array:
-            output = self._extract_network_info(container)
-            self.logger.debug(output)
+        # res = self._container_network_info()
+        # self.logger.debug(res.status_code)
+        # containers_array = json.loads(res.text)
+        # self.logger.debug(len(containers_array))
+        # for container in containers_array:
+        #    output = self._extract_network_info(container)
+        #    self.logger.debug(output)
+        producer_thread = Thread(target=self._container_producer)
+        producer_thread.start()
+
+        output_thread = Thread(target=self._outputter)
+        output_thread.start()
+
+        # Start the worker threads
+        worker_threads = []
+        for _ in range(WORKER_THREADS):
+            worker_thread = Thread(target=self._container_consumer)
+            worker_threads.append(worker_thread)
+            worker_thread.start()
+
+        # Wait for the producer thread to complete
+        producer_thread.join()
+
+        # Wait for the worker threads to complete
+        for worker_thread in worker_threads:
+            worker_thread.join()
+
+        # Indicate to the output thread that processing is complete
+        self.output_queue.put(None)
+
+        # Wait for the output thread to complete
+        output_thread.join()
+
+    def _outputter(self):
+        while True:
+            container_info = self.output_queue.get()
+            if container_info is None:
+                break
+            print(json.dumps(container_info, indent=2))  # Use print for output
+            self.output_queue.task_done()
 
     def _extract_network_info(self, container: Dict[str, Any]) -> Dict[str, Any]:
         container_id = container.get("_id")
