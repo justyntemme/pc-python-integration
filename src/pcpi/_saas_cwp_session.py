@@ -73,6 +73,7 @@ class SaaSCWPSession(Session):
         self.token = ""
         self.request_queue = Queue()
         self.output_queue = Queue()
+        self.container_open_ports = []
 
         self.headers = {
             "content-type": "application/json; charset=UTF-8",
@@ -99,7 +100,6 @@ class SaaSCWPSession(Session):
 
     def __cwpp_metadata(self, cspm_session):
         res = cspm_session.request("GET", "meta_info")
-        print(res)
         compute_url = res.json()["twistlockUrl"]
 
         return compute_url
@@ -252,7 +252,7 @@ class SaaSCWPSession(Session):
         producer_thread = Thread(target=self._container_producer)
         producer_thread.start()
 
-        output_thread = Thread(target=self._outputter)
+        output_thread = Thread(target=self._container_outputter)
         output_thread.start()
 
         # Start the worker threads
@@ -274,13 +274,16 @@ class SaaSCWPSession(Session):
 
         # Wait for the output thread to complete
         output_thread.join()
+        return self.container_open_ports
 
-    def _outputter(self):
+    def _container_outputter(self):
         while True:
             container_info = self.output_queue.get()
             if container_info is None:
                 break
-            print(json.dumps(container_info, indent=2))  # Use print for output
+            self.container_open_ports.append(json.dumps(container_info, indent=2))
+            self.logger.debug("Found network info object")
+            # print(json.dumps(container_info, indent=2))  # Use print for output
             self.output_queue.task_done()
 
     def _extract_network_info(self, container: Dict[str, Any]) -> Dict[str, Any]:
