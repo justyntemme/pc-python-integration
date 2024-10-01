@@ -186,3 +186,15 @@ if package_dir not in sys.path:
 # total_rows = cspm_session.config_search_request_function(payload, dump_data)
 
 # print(f'Got {total_rows} Total Rows')
+#
+# CWP Get open container ports example usage
+# from src.pcpi import session_loader
+# import loguru
+
+# session_managers = session_loader.load_config(logger=loguru.logger)
+# session_manager = session_managers[0]
+
+# cwp_session = session_manager.create_cwp_session()
+# res = cwp_session.get_open_container_ports()
+# print(res)
+# You could then modify the output to dump to a file or use python to change to CSV format
