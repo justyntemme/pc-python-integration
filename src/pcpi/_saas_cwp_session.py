@@ -4,7 +4,7 @@ import json
 from queue import Queue
 from threading import Thread
 import time
-from typing import Any, Dict, Tuple
+from typing import Any, Dict, Tuple, Optional
 
 import requests
 from urllib3.exceptions import InsecureRequestWarning
@@ -97,7 +97,7 @@ class SaaSCWPSession(Session):
 
         # ==============================================================================
 
-    def _api_login(self) -> object:
+    def _api_login(self) -> Tuple[Optional[requests.Response], Optional[float]]:
         """
         Calls the Prisma Cloud API to generate a x-redlock-auth JWT.
 
