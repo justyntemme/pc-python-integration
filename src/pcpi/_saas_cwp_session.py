@@ -95,16 +95,8 @@ class SaaSCWPSession(Session):
         )
         self.cspm_token = self.cspm_session.token
 
-    def __cspm_login(self):
-        self.cspm_token = self.cspm_session._api_login_wrapper()
+        # ==============================================================================
 
-    def __cwpp_metadata(self, cspm_session):
-        res = cspm_session.request("GET", "meta_info")
-        compute_url = res.json()["twistlockUrl"]
-
-        return compute_url
-
-    # ==============================================================================
     def _api_login(self) -> object:
         """
         Calls the Prisma Cloud API to generate a x-redlock-auth JWT.
@@ -242,13 +234,6 @@ class SaaSCWPSession(Session):
         self.output_queue.put(None)
 
     def get_open_container_ports(self) -> object:
-        # res = self._container_network_info()
-        # self.logger.debug(res.status_code)
-        # containers_array = json.loads(res.text)
-        # self.logger.debug(len(containers_array))
-        # for container in containers_array:
-        #    output = self._extract_network_info(container)
-        #    self.logger.debug(output)
         producer_thread = Thread(target=self._container_producer)
         producer_thread.start()
 
@@ -338,12 +323,12 @@ class SaaSCWPSession(Session):
             )
 
         if open_ports:
-            container_info = {
+            container_network_info = {
                 "id": container_id,
                 "open_ports": open_ports,
                 "network": network,
                 "networks": network_settings,
             }
-            return container_info
+            return container_network_info
 
         return {}
