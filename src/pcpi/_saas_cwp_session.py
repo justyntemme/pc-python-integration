@@ -1,7 +1,8 @@
 # Installed
 import requests
-
+import json
 from urllib3.exceptions import InsecureRequestWarning
+from typing import Tuple, Dict, Any
 
 requests.packages.urllib3.disable_warnings(category=InsecureRequestWarning)
 
@@ -155,8 +156,7 @@ class SaaSCWPSession(Session):
         )
         return self._api_login()
 
-    def container_network_info(self) -> object:
-        print("Hello from container network info")
+    def _container_network_info(self) -> requests.Response:
         url = f"{self.api_url}/api/v1/containers"
         self.logger.debug("api url %s", self.api_url)
 
@@ -167,4 +167,75 @@ class SaaSCWPSession(Session):
 
         response = requests.get(url, headers=headers, timeout=60, verify=False)
 
-        return response.text
+        return response
+
+    def get_open_container_ports(self) -> object:
+        res = self._container_network_info()
+        self.logger.debug(res.status_code)
+        containers_array = json.loads(res.text)
+        self.logger.debug(len(containers_array))
+        for container in containers_array:
+            output = self._extract_network_info(container)
+            self.logger.debug(output)
+
+    def _extract_network_info(self, container: Dict[str, Any]) -> Dict[str, Any]:
+        container_id = container.get("_id")
+
+        open_ports = []
+
+        # Extract ports from `network` object
+        network = container.get("network", {})
+        network_ports = network.get("ports", [])
+        for port in network_ports:
+            open_ports.append(
+                {
+                    "port": port.get("container"),
+                    "host_port": port.get("host"),
+                    "host_ip": port.get("hostIP"),
+                    "nat": port.get("nat"),
+                    "type": "network",
+                }
+            )
+
+        # Extract ports from `networkSettings` object
+        network_settings = container.get("networkSettings", {})
+        settings_ports = network_settings.get("ports", [])
+        for port in settings_ports:
+            open_ports.append(
+                {
+                    "port": port.get("containerPort"),
+                    "host_port": port.get("hostPort"),
+                    "host_ip": port.get("hostIP"),
+                    "type": "networkSettings",
+                }
+            )
+
+        # Extract ports from `firewallProtection` object
+        firewall_protection = container.get("firewallProtection", {})
+        fw_ports = firewall_protection.get("ports", [])
+        for port in fw_ports:
+            open_ports.append({"port": port, "type": "firewallProtection"})
+        tls_ports = firewall_protection.get("tlsPorts", [])
+        for port in tls_ports:
+            open_ports.append({"port": port, "type": "firewallProtection_tls"})
+        unprotected_processes = firewall_protection.get("unprotectedProcesses", [])
+        for process in unprotected_processes:
+            open_ports.append(
+                {
+                    "port": process.get("port"),
+                    "process": process.get("process"),
+                    "tls": process.get("tls"),
+                    "type": "unprotectedProcess",
+                }
+            )
+
+        if open_ports:
+            container_info = {
+                "id": container_id,
+                "open_ports": open_ports,
+                "network": network,
+                "networks": network_settings,
+            }
+            return container_info
+
+        return {}
