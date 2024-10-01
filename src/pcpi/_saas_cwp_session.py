@@ -149,8 +149,6 @@ class SaaSCWPSession(Session):
         self._api_login()
 
     def _api_refresh(self) -> None:
-        # res, time = self._api_login(self)
-
         self.logger.debug(
             "API - Refreshing SaaS CWP session token _saas_cpw_session.py."
         )
