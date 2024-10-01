@@ -154,3 +154,17 @@ class SaaSCWPSession(Session):
             "API - Refreshing SaaS CWP session token _saas_cpw_session.py."
         )
         return self._api_login()
+
+    def container_network_info(self) -> object:
+        print("Hello from container network info")
+        url = f"{self.api_url}/api/v1/containers"
+        self.logger.debug("api url %s", self.api_url)
+
+        headers = {
+            "accept": "application/json",
+            "Authorization": f"Bearer {self.token}",
+        }
+
+        response = requests.get(url, headers=headers, timeout=60, verify=False)
+
+        return response.text
