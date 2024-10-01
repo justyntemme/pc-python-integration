@@ -201,6 +201,151 @@ class apiRequestTest(TestCase):
     #     self.assertEqual(res.status_code, 200)
 
 
+class SaaSCWPSessionTests(TestCase):
+    @mock.patch("requests.request")
+    def test_api_login_success(self, mock_request):
+        from src.pcpi import saas_session_manager
+
+        mock_response = mock.Mock()
+        mock_response.json.return_value = {"token": "fake_token"}
+        mock_request.return_value = mock_response
+
+        session = saas_session_manager.SaaSCWPSession(
+            tenant_name="test_tenant",
+            a_key="test_a_key",
+            s_key="test_s_key",
+            api_url="https://test.api.url",
+            verify=False,
+            proxies={},
+            logger=py_logger,
+        )
+
+        response, time_completed = session._api_login()
+
+        self.assertEqual(session.cwp_token, "fake_token")
+        self.assertIsInstance(response, mock.Mock)
+        self.assertGreaterEqual(time_completed, 0)
+
+    @mock.patch("requests.get")
+    def test_get__container_network_info(self, mock_get):
+        from src.pcpi import saas_session_manager
+
+        mock_response = mock.Mock()
+        mock_response.status_code = 200
+        mock_response.text = json.dumps([{"_id": "container1"}, {"_id": "container2"}])
+        mock_get.return_value = mock_response
+
+        session = saas_session_manager.SaaSCWPSession(
+            tenant_name="test_tenant",
+            a_key="test_a_key",
+            s_key="test_s_key",
+            api_url="https://test.api.url",
+            verify=False,
+            proxies={},
+            logger=py_logger,
+        )
+
+        status_code, response_text = session._get__container_network_info(0, 100)
+
+        self.assertEqual(status_code, 200)
+        self.assertEqual(
+            json.loads(response_text), [{"_id": "container1"}, {"_id": "container2"}]
+        )
+
+    @mock.patch("requests.get")
+    def test_get_open_container_ports(self, mock_get):
+        from src.pcpi import saas_session_manager
+
+        mock_response = mock.Mock()
+        mock_response.status_code = 200
+        mock_response.text = json.dumps(
+            [
+                {
+                    "_id": "container1",
+                    "network": {
+                        "ports": [
+                            {"container": 80, "host": 8080, "hostIP": "127.0.0.1"}
+                        ]
+                    },
+                },
+                {
+                    "_id": "container2",
+                    "networkSettings": {
+                        "ports": [
+                            {
+                                "containerPort": 443,
+                                "hostPort": 8443,
+                                "hostIP": "127.0.0.1",
+                            }
+                        ]
+                    },
+                },
+            ]
+        )
+        mock_get.return_value = mock_response
+
+        session = saas_session_manager.SaaSCWPSession(
+            tenant_name="test_tenant",
+            a_key="test_a_key",
+            s_key="test_s_key",
+            api_url="https://test.api.url",
+            verify=False,
+            proxies={},
+            logger=py_logger,
+        )
+
+        open_ports = session.get_open_container_ports()
+
+        expected_ports = [
+            json.dumps(
+                {
+                    "id": "container1",
+                    "open_ports": [
+                        {
+                            "port": 80,
+                            "host_port": 8080,
+                            "host_ip": "127.0.0.1",
+                            "nat": None,
+                            "type": "network",
+                        }
+                    ],
+                    "network": {
+                        "ports": [
+                            {"container": 80, "host": 8080, "hostIP": "127.0.0.1"}
+                        ]
+                    },
+                    "networks": {},
+                },
+                indent=2,
+            ),
+            json.dumps(
+                {
+                    "id": "container2",
+                    "open_ports": [
+                        {
+                            "port": 443,
+                            "host_port": 8443,
+                            "host_ip": "127.0.0.1",
+                            "type": "networkSettings",
+                        }
+                    ],
+                    "network": {},
+                    "networks": {
+                        "ports": [
+                            {
+                                "containerPort": 443,
+                                "hostPort": 8443,
+                                "hostIP": "127.0.0.1",
+                            }
+                        ]
+                    },
+                },
+                indent=2,
+            ),
+        ]
+
+        self.assertEqual(open_ports, expected_ports)
+
+
 if __name__ == "__main__":
     unittest.main()
-
