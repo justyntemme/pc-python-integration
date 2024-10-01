@@ -268,7 +268,6 @@ class SaaSCWPSession(Session):
                 break
             self.container_open_ports.append(json.dumps(container_info, indent=2))
             self.logger.debug("Found network info object")
-            # print(json.dumps(container_info, indent=2))  # Use print for output
             self.output_queue.task_done()
 
     def _extract_network_info(self, container: Dict[str, Any]) -> Dict[str, Any]:
