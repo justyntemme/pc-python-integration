@@ -186,3 +186,25 @@ if package_dir not in sys.path:
 # total_rows = cspm_session.config_search_request_function(payload, dump_data)
 
 # print(f'Got {total_rows} Total Rows')
+#
+# CWP Get open container ports example to build csv from open container ports
+# from src.pcpi import session_loader
+# import loguru
+# import csv
+# import json
+
+# session_managers = session_loader.load_config(logger=loguru.logger)
+# session_manager = session_managers[0]
+# cwp_session = session_manager.create_cwp_session()
+# res = cwp_session.get_open_container_ports()
+# with open("output.csv", mode="w", newline="") as file:
+#    writer = csv.writer(file)
+#    header = ["ID", "Port", "Type"]
+#    for item in res:
+#        json_obj = json.loads(item)
+#        item_id = json_obj["id"]
+#        for port_info in json_obj["open_ports"]:
+#            port = port_info["port"]
+#            port_type = port_info["type"]
+#
+#            writer.writerow([item_id, port, port_type])
